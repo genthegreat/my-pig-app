@@ -25,7 +25,7 @@ It is a Next.js static export served as a PWA: every screen is a precached file,
 
 ```
 src/domain/     the arithmetic: offer/hold-or-sell, sales, rations, growth, herd,
-                cash flow, schedules — pure functions, unit-tested
+                cash flow, schedules — pure functions
 src/db/         Dexie schema, write path with sync queue, settings (every constant with
                 its source), seed loader, calendar generator
 src/seed/       the sample farm, and the generated pointer to whichever farm is loaded
@@ -46,8 +46,7 @@ private/
   farm.ts          exports SEED_VERSION, seedRows() and topUp(rows) — same shape as src/seed/sample.ts
   settings.ts      exports SETTING_OVERRIDES: your own figures for the settings in src/db/settings.ts
   seed/            whatever raw files your farm.ts reads (bundled into src/seed/seed-data.json)
-  tests/           tests against your own records (picked up by `npm test`)
-  e2e.mjs          browser check against your own records (`npm run e2e`)
+  tests/           tests against your own records (picked up by `pnpm test`)
 ```
 
 Before every `dev`, `build`, `test` and `typecheck`, `scripts/gen-seed.mjs` checks for `private/farm.ts` and points `src/seed/farm.ts` at it, or at the sample farm when it is absent. Nothing else changes.
@@ -55,12 +54,14 @@ Before every `dev`, `build`, `test` and `typecheck`, `scripts/gen-seed.mjs` chec
 ## Run it
 
 ```
-npm install            # Node 20.9+ (add --legacy-peer-deps if npm 10.9 trips on peer resolution)
-npm run dev            # http://localhost:3000 — no service worker in dev
-npm test               # domain maths, sample farm checks, and private/tests when present
-npm run build          # static export in out/, with sw.js
-npm start              # serves out/ on :3000, offline behaviour included
+pnpm install           # Node 20.9+, pnpm 10 (`corepack enable` provides it)
+pnpm dev               # http://localhost:3000 — no service worker in dev
+pnpm test              # the money and identity maths, sample farm checks, and private/tests when present
+pnpm build             # static export in out/, with sw.js
+pnpm start             # serves out/ on :3000, offline behaviour included
 ```
+
+The tests are deliberately few: sales and dressing percentage, the offer calculator, rations, pay schedules, and the sample farm's integrity. They never ship in the app, and the Docker build installs without the test tools (`pnpm install --prod`).
 
 ## Deploy it with Docker Compose
 

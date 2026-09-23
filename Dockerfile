@@ -4,11 +4,13 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
-COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund --fetch-retries=5 --fetch-retry-maxtimeout=120000
+RUN corepack enable
+COPY package.json pnpm-lock.yaml ./
+# --prod: the build needs next, react, typescript and the types, not the test tools.
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile --prod
 COPY . .
-# prebuild bundles data/seed → src/seed/seed-data.json; postbuild writes out/sw.js
-RUN npm run build
+# build: gen-seed picks the farm (private/ if copied in, else the sample), then next build, then out/sw.js
+RUN pnpm run build
 
 # ── Stage 2: serve it ───────────────────────────────────────────────────────
 # The app has no server-side code. Everything lives in the phone's IndexedDB;

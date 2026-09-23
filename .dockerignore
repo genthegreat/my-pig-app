@@ -5,3 +5,8 @@ out
 *.md
 !README.md
 .env*
+# Tests and their setup: not needed to build, and their tools are not installed in the image
+**/*.test.ts
+private/tests
+src/test-setup.ts
+vitest.config.ts
