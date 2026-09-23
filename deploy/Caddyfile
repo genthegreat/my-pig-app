@@ -1,0 +1,7 @@
+# Optional HTTPS front for the app (docker compose --profile https up -d).
+# Installing a PWA to a phone's home screen needs a secure origin; Caddy
+# fetches and renews a certificate for DOMAIN on its own.
+{$DOMAIN} {
+    encode gzip
+    reverse_proxy app:80
+}

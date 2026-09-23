@@ -1,0 +1,42 @@
+# My Pigs — offline-first PWA for a piggery.
+#
+#   docker compose up -d --build            # http://<host>:3000
+#   DOMAIN=pigs.example.com docker compose --profile https up -d --build
+#
+# The container serves static files only. All farm data lives in the
+# phone's browser storage, so there is no database to back up here —
+# use Settings → Export backup on the phone.
+
+services:
+  app:
+    build: .
+    image: my-pigs-app:latest
+    container_name: my-pigs
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:80"
+
+  # Automatic HTTPS for phone installation. With DOMAIN set to a DNS name
+  # that points at this machine (ports 80/443 open) Caddy gets a real
+  # certificate; left at the default "localhost" it issues a self-signed one.
+  caddy:
+    image: caddy:2-alpine
+    container_name: my-pigs-https
+    profiles: ["https"]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:
