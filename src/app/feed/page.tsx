@@ -144,7 +144,7 @@ export default function FeedPage() {
                 <span className="v">
                   <Computed
                     value={`${fmtKg(req.kgPerDay, 1)}/day`}
-                    formula="adults × 2.2 kg + lactating sows × (2.5 kg + 0.25 kg per piglet)"
+                    formula="each stage × its daily intake + lactating sows × (2.5 kg + 0.25 kg per piglet)"
                     inputs={req.lines.map((l) => ({ label: l.label, value: `${l.head} × ${fmtKg(l.kgEach, 2)} = ${fmtKg(l.kg, 1)}` }))}
                     note={`${req.pigletsOnSows} piglets on the sow eat creep, bought separately and not counted here.`}
                   />

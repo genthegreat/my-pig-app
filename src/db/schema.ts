@@ -140,6 +140,7 @@ export interface Weight extends Base {
   method?: WeightMethod;
   notes?: string;
   batch_id?: string; // ext: ties the weights of one pen weigh-in together
+  invalid_reason?: string; // ext: set = kept on record but never counted (e.g. the scale was not zeroed)
 }
 
 export type LitterOutcome = "pending" | "farrowed" | "miscarried" | "not_pregnant";

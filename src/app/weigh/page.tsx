@@ -39,6 +39,7 @@ function Inner() {
   const [value, setValue] = useState("");
   const [batch] = useState(() => uid("wb"));
   const [tagEach, setTagEach] = useState(!!params.get("animal"));
+  const [zeroChecked, setZeroChecked] = useState(false);
 
   // Defaults pre-filled from the last entry.
   useEffect(() => {
@@ -173,6 +174,18 @@ function Inner() {
             </button>
           ))}
           {!occupants.length && <span className="small muted">No pigs recorded in this room — weights go against the pen.</span>}
+        </div>
+      )}
+
+      {/* A scale that does not start at zero spoils the whole session, and nobody notices until the gains look wrong. */}
+      {!zeroChecked && !sorted.length && (method === "spring_scale" || method === "digital_scale") && (
+        <div className="card between">
+          <span className="small">
+            <b>Scale zeroed?</b> It should read 0 with nothing on it.
+          </span>
+          <button type="button" className="btn sm" onClick={() => setZeroChecked(true)}>
+            Reads 0
+          </button>
         </div>
       )}
 

@@ -81,11 +81,15 @@ DOMAIN=pigs.example.com docker compose --profile https up -d --build
 
 Copy `.env.example` to `.env` to keep `PORT` and `DOMAIN` out of the command line. A new build is picked up by installed phones on their next open ("Update ready" toast).
 
+**On a server that already runs nginx**, publish the container on loopback only (`PORT=127.0.0.1:8090`) and proxy a site to it from the host's nginx, with its own certificate. With your own farm's records baked in, put a password in front (`auth_basic`): the records ship inside the JavaScript, so anyone who can load the page can read them. A small server does not need to build the image — build it on your own machine and copy it across with `docker save my-pigs-app:latest | ssh server docker load`.
+
 ## What to know
 
 - **The Windows export quirk.** Next 16's static export writes its segment-cache payloads into nested folders on Windows; `scripts/build-sw.mjs` flattens them so a Windows build matches a Linux one. Docker builds are unaffected.
 - **Weaning age has no default**, so the calendar cannot project weaning dates until it is entered under Settings. The app says so rather than guessing.
 - **Pen weigh-ins are stored against the room**, not spread across the pigs, when nobody recorded which pig was which. The "By tag" mode on the weigh screen records per pig.
+- **A weigh-in that cannot be trusted is kept, not deleted.** "Not valid" on a room's page leaves it out of every daily gain and sale projection, with the reason beside it; "Count it" brings it back. The weigh screen asks whether the scale reads 0 before the first pig.
+- **Intake is per stage**: weaners, sows and boars, and growers and finishers each have their own daily rate under Settings; a lactating sow eats 2.5 kg plus 0.25 kg per piglet.
 - **The daily running cost** is a setting; Money also computes it from actual spend ÷ pig-days for the last three months and offers to replace the setting with that figure.
 - **Feed buying rhythm** is a schedule rule: add one under Schedule (product + how often) and the calendar says when to buy and how many bags, worked out from the current rations and herd. A month-end pay rule can pay the **balance** of the monthly rate after any advances already taken.
 - **Chart colours are validated, not eyeballed.** The calendar marks and cash-flow bars use hues checked for colour-vision separation across every pair; shape is the second encoding on the calendar. Keep to those tokens (`--c-pay`, `--c-feed`, `--c-breed`, `--c-in`, `--c-task`, `--c-overdue`) when adding a kind.

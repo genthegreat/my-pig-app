@@ -179,11 +179,29 @@ export const SETTING_DEFS: SettingDef[] = [
   // ── Feed ──────────────────────────────────────────────────────────────
   {
     key: "assumed_intake_kg",
-    label: "Daily intake per adult pig",
+    label: "Daily intake per grower or finisher",
     value: "2.2",
     unit: "kg",
     group: "feed",
-    source: "Operating assumption.",
+    source: "Operating assumption. Also used for weaners and breeders when their own rates are blank.",
+    step: 0.1,
+  },
+  {
+    key: "weaner_intake_kg",
+    label: "Daily intake per weaner",
+    value: "1.0",
+    unit: "kg",
+    group: "feed",
+    source: "A typical weaner's intake — set your own.",
+    step: 0.1,
+  },
+  {
+    key: "breeder_intake_kg",
+    label: "Daily intake per sow or boar",
+    value: "2.5",
+    unit: "kg",
+    group: "feed",
+    source: "A typical dry sow or boar ration — check your feed's bag label.",
     step: 0.1,
   },
   {

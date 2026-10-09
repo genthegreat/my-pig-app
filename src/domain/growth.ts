@@ -22,11 +22,14 @@ export interface WeighSession {
   weights: Weight[];
 }
 
-/** Group live weights into sessions by room and date, latest first. */
-export function weighSessions(weights: Weight[]): WeighSession[] {
+/**
+ * Group live weights into sessions by room and date, latest first. Weights
+ * marked invalid are left out — pass `invalid: true` to get only those.
+ */
+export function weighSessions(weights: Weight[], { invalid = false } = {}): WeighSession[] {
   const byKey = new Map<string, Weight[]>();
   for (const w of weights) {
-    if (w.basis !== "live") continue;
+    if (w.basis !== "live" || !!w.invalid_reason !== invalid) continue;
     const key = `${w.room_id ?? w.group_id ?? w.animal_id ?? "?"}|${w.date}`;
     const list = byKey.get(key) ?? [];
     list.push(w);

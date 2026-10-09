@@ -8,11 +8,12 @@ import { db } from "@/db/db";
 import { useActiveAnimals, useRoomMap, useRooms, useToday } from "@/db/hooks";
 import type { RoomOccupancy, Weight } from "@/db/schema";
 import { patch } from "@/db/write";
+import { regenerateCalendar } from "@/db/calendar";
 import { useToast } from "@/components/AppShell";
 import { AnimalRow } from "@/components/AnimalRow";
 import { MoveSheet, StageSheet } from "@/components/sheets";
 import { Computed, Confirm, Field, Page, TextInput } from "@/components/ui";
-import { measuredAdg, weighSessions } from "@/domain/growth";
+import { measuredAdg, weighSessions, type WeighSession } from "@/domain/growth";
 import { fmtDate, fmtKg, plural } from "@/domain/format";
 
 export default function RoomDetailPage() {
@@ -35,6 +36,8 @@ function Inner() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sheet, setSheet] = useState<"move" | "stage" | "rename" | "retire" | null>(null);
   const [label, setLabel] = useState("");
+  const [leaveOut, setLeaveOut] = useState<WeighSession | null>(null);
+  const [reason, setReason] = useState("");
 
   const occupants = useMemo(
     () => (animals ?? []).filter((a) => (isNone ? !a.current_room : a.current_room === id)),
@@ -52,7 +55,14 @@ function Inner() {
   const allSessions = useMemo(() => weighSessions(weights ?? []), [weights]);
   const current = useMemo(() => allSessions.filter((s) => !since || s.date >= since), [allSessions, since]);
   const earlier = useMemo(() => allSessions.filter((s) => since && s.date < since), [allSessions, since]);
+  const notCounted = useMemo(() => weighSessions(weights ?? [], { invalid: true }), [weights]);
   const adg = measuredAdg(current);
+
+  // A weigh-in that cannot be trusted is kept on record but left out of every gain and projection.
+  const setInvalid = async (s: WeighSession, why: string | undefined) => {
+    for (const w of s.weights) await patch("weight", w.id, { invalid_reason: why });
+    await regenerateCalendar();
+  };
 
   const toggle = (aid: string) => {
     const n = new Set(selected);
@@ -134,10 +144,47 @@ function Inner() {
                     <span className="v">
                       avg {fmtKg(s.avgKg)} of {s.count} · {s.weights.map((w) => w.weight_kg).join(", ")}
                     </span>
+                    <button
+                      type="button"
+                      className="btn sm soft"
+                      style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                      onClick={() => {
+                        setReason("");
+                        setLeaveOut(s);
+                      }}
+                    >
+                      Not valid
+                    </button>
                   </div>
                 ))}
               </div>
             </>
+          )}
+          {notCounted.length > 0 && (
+            <details className="plain mt">
+              <summary>{plural(notCounted.length, "weigh-in")} not counted</summary>
+              <div className="small">
+                {notCounted.map((s) => (
+                  <div key={s.date} className="stat-line">
+                    <span className="k">{fmtDate(s.date)}</span>
+                    <span className="v">
+                      avg {fmtKg(s.avgKg)} of {s.count} · {s.weights[0].invalid_reason}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn sm soft"
+                      style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                      onClick={async () => {
+                        await setInvalid(s, undefined);
+                        toast("Weigh-in counted again");
+                      }}
+                    >
+                      Count it
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
           {earlier.length > 0 && (
             <details className="plain mt">
@@ -231,6 +278,29 @@ function Inner() {
         onConfirm={async () => {
           if (label.trim()) await patch("room", id, { label: label.trim() });
           setSheet(null);
+        }}
+      />
+      <Confirm
+        open={!!leaveOut}
+        onClose={() => setLeaveOut(null)}
+        title="Leave this weigh-in out?"
+        confirmLabel="Leave it out"
+        body={
+          <>
+            <p className="small muted">
+              {leaveOut && `${fmtDate(leaveOut.date)}, ${plural(leaveOut.count, "weight")}. `}
+              It stays on record, but no daily gain or sale projection uses it.
+            </p>
+            <Field label="Why?">
+              <TextInput value={reason} onChange={setReason} placeholder="e.g. scale not zeroed" autoFocus />
+            </Field>
+          </>
+        }
+        onConfirm={async () => {
+          if (!leaveOut) return;
+          await setInvalid(leaveOut, reason.trim() || "No reason given");
+          setLeaveOut(null);
+          toast("Weigh-in left out");
         }}
       />
       <Confirm

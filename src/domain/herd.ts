@@ -105,19 +105,12 @@ export interface FeedRequirement {
 }
 
 /**
- * Daily intake per active pig: 2.2 kg per adult, 2.5 kg + 0.25 kg per piglet
- * for a lactating sow, nothing for a piglet on the sow (creep is bought
- * separately). The map is keyed by animal id.
+ * Sows nursing a litter, with the number of piglets still on each. A sow is
+ * lactating while her latest litter has piglets that are neither weaned nor
+ * past the weaning age (or 56 days if that is not set).
  */
-export function intakeByAnimal(animals: Animal[], litters: Litter[], settings: SettingsMap | undefined, today: string): Map<string, number> {
-  const intake = num(settings, "assumed_intake_kg");
-  const lactBase = num(settings, "lactating_sow_base_kg");
-  const lactPer = num(settings, "lactating_sow_per_piglet_kg");
+function lactatingSows(active: Animal[], litters: Litter[], settings: SettingsMap | undefined, today: string): Map<string, number> {
   const weaningAge = num(settings, "weaning_age_days");
-  const active = animals.filter((a) => a.status === "active");
-
-  // A sow is lactating while her latest litter has piglets that are neither
-  // weaned nor past the weaning age (or 56 days if that is not set).
   const lactWindow = Number.isNaN(weaningAge) ? 56 : weaningAge;
   const lactating = new Map<string, number>();
   for (const l of litters) {
@@ -127,53 +120,86 @@ export function intakeByAnimal(animals: Animal[], litters: Litter[], settings: S
     const alive = active.filter((a) => a.litter_id === l.id && a.stage === "piglet_creep").length;
     lactating.set(l.dam_id, (lactating.get(l.dam_id) ?? 0) + alive);
   }
+  return lactating;
+}
+
+type IntakeClass = "weaner" | "breeder" | "growing";
+
+const INTAKE_LINE: Record<IntakeClass, string> = {
+  weaner: "Weaners",
+  breeder: "Sows and boars",
+  growing: "Growers and finishers",
+};
+
+function intakeClass(stage: Stage): IntakeClass {
+  if (stage === "weaner") return "weaner";
+  if (stage === "sow" || stage === "boar" || stage === "gilt") return "breeder";
+  return "growing";
+}
+
+/** Daily intake for each class, each falling back to the grower rate when unset. */
+function classIntake(settings: SettingsMap | undefined): Record<IntakeClass, number> {
+  const growing = num(settings, "assumed_intake_kg");
+  const or = (v: number) => (Number.isNaN(v) ? growing : v);
+  return { weaner: or(num(settings, "weaner_intake_kg")), breeder: or(num(settings, "breeder_intake_kg")), growing };
+}
+
+/**
+ * Daily intake per active pig by stage — weaners, sows and boars, growers and
+ * finishers each at their own rate — and 2.5 kg + 0.25 kg per piglet for a
+ * lactating sow. Nothing for a piglet on the sow (creep is bought
+ * separately). The map is keyed by animal id.
+ */
+export function intakeByAnimal(animals: Animal[], litters: Litter[], settings: SettingsMap | undefined, today: string): Map<string, number> {
+  const rate = classIntake(settings);
+  const lactBase = num(settings, "lactating_sow_base_kg");
+  const lactPer = num(settings, "lactating_sow_per_piglet_kg");
+  const active = animals.filter((a) => a.status === "active");
+  const lactating = lactatingSows(active, litters, settings, today);
 
   const out = new Map<string, number>();
   for (const a of active) {
     if (a.stage === "piglet_creep") out.set(a.id, 0);
     else if (lactating.has(a.id)) out.set(a.id, lactBase + lactPer * (lactating.get(a.id) ?? 0));
-    else out.set(a.id, intake);
+    else out.set(a.id, rate[intakeClass(a.stage)]);
   }
   return out;
 }
 
 /**
- * Daily feed the herd needs: 2.2 kg per adult, 2.5 kg + 0.25 kg per piglet
- * for a lactating sow. Piglets on the sow eat creep, which is bought
- * separately and is not counted here.
+ * Daily feed the herd needs, by stage, plus 2.5 kg + 0.25 kg per piglet for
+ * a lactating sow. Piglets on the sow eat creep, which is bought separately
+ * and is not counted here.
  */
 export function feedRequirement(animals: Animal[], litters: Litter[], settings: SettingsMap | undefined, today: string): FeedRequirement {
-  const intake = num(settings, "assumed_intake_kg");
-  const lactBase = num(settings, "lactating_sow_base_kg");
+  const rate = classIntake(settings);
+  const active = animals.filter((a) => a.status === "active");
+  const lactating = lactatingSows(active, litters, settings, today);
   const per = intakeByAnimal(animals, litters, settings, today);
-  let adults = 0;
+  const head: Record<IntakeClass, number> = { weaner: 0, breeder: 0, growing: 0 };
   let pigletsOnSows = 0;
-  let lactatingSows = 0;
   let lactKg = 0;
-  for (const a of animals) {
-    if (a.status !== "active") continue;
-    const kg = per.get(a.id) ?? 0;
+  for (const a of active) {
     if (a.stage === "piglet_creep") pigletsOnSows++;
-    else if (kg !== intake && kg >= lactBase) {
-      lactatingSows++;
-      lactKg += kg;
-    } else adults++;
+    else if (lactating.has(a.id)) lactKg += per.get(a.id) ?? 0;
+    else head[intakeClass(a.stage)]++;
   }
+  const classes = Object.keys(head) as IntakeClass[];
   const lines = [
-    { label: "Adults and growing stock", head: adults, kgEach: intake, kg: adults * intake },
+    ...classes.map((c) => ({ label: INTAKE_LINE[c], head: head[c], kgEach: rate[c], kg: head[c] * rate[c] })),
     {
       label: "Lactating sows (2.5 kg + 0.25 per piglet)",
-      head: lactatingSows,
-      kgEach: lactatingSows ? lactKg / lactatingSows : 0,
+      head: lactating.size,
+      kgEach: lactating.size ? lactKg / lactating.size : 0,
       kg: lactKg,
     },
   ];
   return {
-    kgPerDay: adults * intake + lactKg,
-    adults,
-    lactatingSows,
+    kgPerDay: lines.reduce((s, l) => s + l.kg, 0),
+    adults: classes.reduce((s, c) => s + head[c], 0),
+    lactatingSows: lactating.size,
     pigletsOnSows,
-    lines,
+    lines: lines.filter((l) => l.head > 0),
   };
 }
 
