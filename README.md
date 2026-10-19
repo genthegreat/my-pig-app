@@ -12,7 +12,7 @@ It replaces handwritten phone notes that never agreed with each other. The rules
 
 ## What it does
 
-- **Animals, tags and rooms** — the herd by stage, lineage, room history, pen and per-pig weigh-ins, growth projections to market weight.
+- **Animals, tags and rooms** — the herd by stage, lineage, room history, pen and per-pig weigh-ins (typed at the pen, or pasted from a phone note in one go), growth projections to market weight.
 - **Breeding** — services, expected farrowings (114 days), litters, and litters whose sow was only named by room kept unassigned until she is identified by tag.
 - **Costs and feed** — cost lines by category with capital kept out of cost-per-pig; feed products with bag sizes, purchases, rations with ratio basis, feed need and run-out forecast.
 - **Sales and the offer calculator** — live and dead-weight sales, heads and trotters, dressing percentage, live equivalent per kg, what each sold pig fetched, and a hold-or-sell calculator for an offer on the table.
