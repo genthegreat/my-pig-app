@@ -5,14 +5,15 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db/db";
-import { animalLabel, roomLabel, useAnimalMap, useAnimals, useRoomMap, useToday } from "@/db/hooks";
+import { animalLabel, roomLabel, useAnimalMap, useAnimals, useRoomMap, useRooms, useToday } from "@/db/hooks";
 import { litterDamName, regenerateCalendar } from "@/db/calendar";
-import { STAGE_LABEL, type Litter } from "@/db/schema";
+import { STAGE_LABEL, type Animal, type Litter, type Sex } from "@/db/schema";
 import { patch, save, todayIso } from "@/db/write";
 import { useToast } from "@/components/AppShell";
 import { AnimalRow } from "@/components/AnimalRow";
-import { DateInput, Field, NumInput, Page, Select, Sheet, TextArea } from "@/components/ui";
+import { DateInput, Field, NumInput, Page, Seg, Select, Sheet, TextArea } from "@/components/ui";
 import { fmtDate, fmtPct, plural } from "@/domain/format";
+import { roomOn, sexCounts } from "@/domain/litter";
 
 export default function LitterPage() {
   return (
@@ -31,7 +32,7 @@ function Inner() {
   const today = useToday();
   const { toast } = useToast();
   const flags = useLiveQuery(() => db.data_flag.where("record_id").equals(id).toArray(), [id]);
-  const [sheet, setSheet] = useState<"dam" | "outcome" | "wean" | "edit" | null>(null);
+  const [sheet, setSheet] = useState<"dam" | "outcome" | "wean" | "edit" | "sexes" | null>(null);
 
   if (!litter) return <Page title="…" back="/breeding/">{null}</Page>;
   const l = litter;
@@ -39,6 +40,7 @@ function Inner() {
   const dam = l.dam_id ? animalMap.get(l.dam_id) : undefined;
   const sire = l.sire_id ? animalMap.get(l.sire_id) : undefined;
   const alive = offspring.filter((a) => a.status === "active");
+  const sexes = sexCounts(offspring);
 
   return (
     <Page
@@ -121,8 +123,30 @@ function Inner() {
               </span>
             </div>
             <div className="stat-line">
+              <span className="k">Sexes</span>
+              <span className="v">
+                {offspring.length ? (
+                  <button type="button" className="computed" onClick={() => setSheet("sexes")}>
+                    <span className="v">
+                      {sexes.males} male · {sexes.females} female{sexes.unknown ? ` · ${sexes.unknown} not sexed` : ""}
+                    </span>
+                  </button>
+                ) : (
+                  "no piglet records"
+                )}
+              </span>
+            </div>
+            <div className="stat-line">
               <span className="k">Room at farrowing</span>
-              <span className="v">{roomLabel(rooms, l.room_at_farrowing)}</span>
+              <span className="v">
+                {l.room_at_farrowing ? (
+                  roomLabel(rooms, l.room_at_farrowing)
+                ) : (
+                  <button type="button" className="computed" onClick={() => setSheet("edit")}>
+                    <span className="v">not recorded — add</span>
+                  </button>
+                )}
+              </span>
             </div>
             <div className="stat-line">
               <span className="k">Weaned</span>
@@ -168,6 +192,7 @@ function Inner() {
       <AssignDamSheet open={sheet === "dam"} onClose={() => setSheet(null)} litter={l} onDone={() => toast("Sow assigned")} />
       <OutcomeSheet open={sheet === "outcome"} onClose={() => setSheet(null)} litter={l} onDone={() => toast("Recorded")} />
       <WeanSheet open={sheet === "wean"} onClose={() => setSheet(null)} litter={l} alive={alive.length} onDone={() => toast("Weaned")} />
+      <SexSheet open={sheet === "sexes"} onClose={() => setSheet(null)} litter={l} piglets={offspring} onDone={() => toast("Sexes saved")} />
       <EditSheet open={sheet === "edit"} onClose={() => setSheet(null)} litter={l} onDone={() => toast("Saved")} />
     </Page>
   );
@@ -265,25 +290,72 @@ function WeanSheet({ open, onClose, litter, alive, onDone }: { open: boolean; on
 
 function EditSheet({ open, onClose, litter, onDone }: { open: boolean; onClose: () => void; litter: Litter; onDone: () => void }) {
   const animals = useAnimals();
+  const rooms = useRooms();
+  const roomMap = useRoomMap();
+  const farrowed = litter.outcome === "farrowed";
+  const [farrowedOn, setFarrowedOn] = useState(litter.actual_farrow ?? "");
+  const [room, setRoom] = useState(litter.room_at_farrowing ?? "");
+  const damRooms = useLiveQuery(async () => (litter.dam_id ? await db.room_occupancy.where("animal_id").equals(litter.dam_id).toArray() : []), [litter.dam_id]);
   const [born, setBorn] = useState(litter.born_alive?.toString() ?? "");
   const [still, setStill] = useState(String(litter.stillborn));
   const [died, setDied] = useState(String(litter.died_pre_weaning));
   const [sire, setSire] = useState(litter.sire_id ?? "");
   const [notes, setNotes] = useState(litter.notes ?? "");
   const boars = (animals ?? []).filter((a) => a.sex === "male" && !a.castrated);
+  // A farrowing room filled in afterwards still has to be the room that held
+  // the sow that day — when her room history reaches back that far.
+  const heldIn = farrowed && litter.dam_id && farrowedOn ? roomOn(damRooms ?? [], litter.dam_id, farrowedOn) : undefined;
+  const roomMismatch = !!(room && heldIn && heldIn !== room);
   const submit = async () => {
+    if (farrowed && farrowedOn && farrowedOn !== litter.actual_farrow) {
+      // The piglets were born on the farrowing date; move their birth with it.
+      for (const a of await db.animal.where("litter_id").equals(litter.id).toArray()) {
+        if (a.birth_date !== litter.actual_farrow) continue;
+        await patch("animal", a.id, { birth_date: farrowedOn });
+        const born = (await db.stage_change.where("animal_id").equals(a.id).toArray()).find((c) => c.reason === "born" && c.date === litter.actual_farrow);
+        if (born) await patch("stage_change", born.id, { date: farrowedOn });
+      }
+    }
     await patch("litter", litter.id, {
+      ...(farrowed ? { actual_farrow: farrowedOn || litter.actual_farrow, room_at_farrowing: room || undefined } : {}),
       born_alive: born ? Number(born) : undefined,
       stillborn: Number(still) || 0,
       died_pre_weaning: Number(died) || 0,
       sire_id: sire || undefined,
       notes: notes.trim() || undefined,
     });
+    await regenerateCalendar();
     onDone();
     onClose();
   };
   return (
     <Sheet open={open} onClose={onClose} title={`Edit ${litter.id}`}>
+      {farrowed && (
+        <>
+          <Field label="Farrowed on">
+            <DateInput value={farrowedOn} onChange={setFarrowedOn} />
+          </Field>
+          <Field label="Room she farrowed in" hint={heldIn ? `Her room history has her in ${roomLabel(roomMap, heldIn)} on that day.` : undefined}>
+            <div className="chips">
+              {(rooms ?? [])
+                .filter((r) => r.active || r.id === room)
+                .map((r) => (
+                  <button key={r.id} type="button" className="chip" aria-pressed={room === r.id} onClick={() => setRoom(room === r.id ? "" : r.id)}>
+                    {r.label}
+                  </button>
+                ))}
+            </div>
+          </Field>
+          {roomMismatch && (
+            <div className="card danger small">
+              <b>
+                On {fmtDate(farrowedOn)} she was in {roomLabel(roomMap, heldIn)}, not {roomLabel(roomMap, room)}.
+              </b>{" "}
+              A farrowing is only accepted against the room that holds the sow.
+            </div>
+          )}
+        </>
+      )}
       <div className="grid-3">
         <Field label="Born alive">
           <NumInput value={born} onChange={setBorn} step={1} />
@@ -301,6 +373,52 @@ function EditSheet({ open, onClose, litter, onDone }: { open: boolean; onClose: 
       <Field label="Notes">
         <TextArea value={notes} onChange={setNotes} />
       </Field>
+      <button type="button" className="btn lg primary" disabled={roomMismatch} onClick={submit}>
+        Save
+      </button>
+    </Sheet>
+  );
+}
+
+const SEX_OPTIONS: { value: Sex | "?"; label: string }[] = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+  { value: "?", label: "?" },
+];
+
+function SexSheet({ open, onClose, litter, piglets, onDone }: { open: boolean; onClose: () => void; litter: Litter; piglets: Animal[]; onDone: () => void }) {
+  const [picked, setPicked] = useState<Record<string, Sex | "?">>({});
+  const sexOf = (a: Animal): Sex | "?" => picked[a.id] ?? a.sex ?? "?";
+  const males = piglets.filter((a) => sexOf(a) === "male").length;
+  const females = piglets.filter((a) => sexOf(a) === "female").length;
+  const submit = async () => {
+    for (const a of piglets) {
+      const s = sexOf(a);
+      if (s !== (a.sex ?? "?")) await patch("animal", a.id, { sex: s === "?" ? undefined : s });
+    }
+    setPicked({});
+    onDone();
+    onClose();
+  };
+  return (
+    <Sheet open={open} onClose={onClose} title={`Sexes in ${litter.id}`}>
+      <p className="small muted">
+        {males} male · {females} female{piglets.length - males - females ? ` · ${piglets.length - males - females} not sexed` : ""}
+      </p>
+      <div className="stack-sm">
+        {piglets
+          .slice()
+          .sort((x, y) => animalLabel(x).localeCompare(animalLabel(y), undefined, { numeric: true }))
+          .map((a) => (
+            <div key={a.id} className="between">
+              <span>
+                {animalLabel(a)}
+                {a.status !== "active" ? <span className="small muted"> · {a.status}</span> : null}
+              </span>
+              <Seg value={sexOf(a)} onChange={(v) => setPicked({ ...picked, [a.id]: v })} options={SEX_OPTIONS} />
+            </div>
+          ))}
+      </div>
       <button type="button" className="btn lg primary" onClick={submit}>
         Save
       </button>
