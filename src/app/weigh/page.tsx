@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db/db";
@@ -109,6 +110,9 @@ function Inner() {
               );
             })}
         </div>
+        <Link href="/weigh/paste/" className="btn lg soft">
+          📋 Paste weights from a note
+        </Link>
       </Page>
     );
   }
