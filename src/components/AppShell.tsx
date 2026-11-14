@@ -7,6 +7,7 @@ import { db } from "@/db/db";
 import { seedDatabase } from "@/db/seed";
 import { regenerateCalendar } from "@/db/calendar";
 import { getDeviceId } from "@/db/device";
+import { AuthError, savedAccount, signInUrl, whoAmI, type Account } from "@/auth/client";
 
 // ── Toasts ──────────────────────────────────────────────────────────────────
 interface ToastCtx {
@@ -18,6 +19,47 @@ export const useToast = () => useContext(ToastContext);
 // ── Online state ────────────────────────────────────────────────────────────
 const OnlineContext = createContext<boolean>(true);
 export const useOnline = () => useContext(OnlineContext);
+
+// ── Who is signed in ────────────────────────────────────────────────────────
+const AccountContext = createContext<Account | undefined>(undefined);
+export const useAccount = () => useContext(AccountContext);
+
+/**
+ * The server will not hand these screens to anyone without a session, but
+ * once they are cached the phone opens them with no signal — so the app keeps
+ * its own note of who signed in, opens on that, and checks it against the
+ * server whenever there is a connection. A session that has ended sends the
+ * person back to sign in; being offline never does.
+ */
+function useSignedIn(): Account | undefined {
+  const [account, setAccount] = useState<Account>();
+  useEffect(() => {
+    let cancelled = false;
+    const leave = () => {
+      if (!cancelled) window.location.replace(signInUrl());
+    };
+    const saved = savedAccount();
+    if (saved) setAccount(saved);
+    const check = () =>
+      whoAmI()
+        .then((user) => {
+          if (cancelled) return;
+          if (user) setAccount(user);
+          else leave();
+        })
+        .catch((e) => {
+          // Unreachable: carry on with what this device remembers, if anything.
+          if (!savedAccount() && !(e instanceof AuthError && e.status !== 0)) leave();
+        });
+    check();
+    window.addEventListener("online", check);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", check);
+    };
+  }, []);
+  return account;
+}
 
 // ── Update-available (service worker) ───────────────────────────────────────
 function useServiceWorker(toast: ToastCtx["toast"]) {
@@ -59,6 +101,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string>();
   const [msg, setMsg] = useState<{ text: string; kind: "ok" | "error"; id: number }>();
   const [online, setOnline] = useState(true);
+  const account = useSignedIn();
 
   const toast = useCallback((text: string, kind: "ok" | "error" = "ok") => {
     setMsg({ text, kind, id: Date.now() });
@@ -84,6 +127,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!account) return; // the farm store is not opened for someone who has not signed in
     let cancelled = false;
     (async () => {
       try {
@@ -100,7 +144,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [account?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ctx = useMemo(() => ({ toast }), [toast]);
 
@@ -115,16 +159,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  if (!ready) {
+  if (!account || !ready) {
     return (
       <div className="splash">
         <div className="logo">🐖</div>
-        <p>Loading the farm…</p>
+        <p>{account ? "Loading the farm…" : "Checking your sign-in…"}</p>
       </div>
     );
   }
 
   return (
+    <AccountContext.Provider value={account}>
     <OnlineContext.Provider value={online}>
       <ToastContext.Provider value={ctx}>
         <div className="app">{children}</div>
@@ -136,6 +181,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       </ToastContext.Provider>
     </OnlineContext.Provider>
+    </AccountContext.Provider>
   );
 }
 

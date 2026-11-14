@@ -3,9 +3,10 @@
 #   docker compose up -d --build            # http://<host>:3000
 #   DOMAIN=pigs.example.com docker compose --profile https up -d --build
 #
-# The container serves static files only. All farm data lives in the
-# phone's browser storage, so there is no database to back up here —
-# use Settings → Export backup on the phone.
+# The container serves the app and keeps the accounts that may sign in to it
+# (the auth_data volume — back that up if you care about the accounts).
+# All farm data lives in the phone's browser storage, so there is no farm
+# database to back up here — use Settings → Export backup on the phone.
 
 services:
   app:
@@ -14,7 +15,20 @@ services:
     container_name: my-pigs
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:80"
+      - "${PORT:-3000}:3000"
+    environment:
+      # Public address, used in password-reset links: https://pigs.example.com
+      APP_URL: ${APP_URL:-}
+      # Invite code people need to create an account. Unset: only the very
+      # first account can be created, then sign-up closes.
+      SIGNUP_CODE: ${SIGNUP_CODE:-}
+      # smtp://user:pass@host:587 — unset: reset links go to `docker compose logs app`
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      # 1 when a reverse proxy (Caddy below, or your own) sits in front
+      TRUST_PROXY: ${TRUST_PROXY:-}
+    volumes:
+      - auth_data:/data
 
   # Automatic HTTPS for phone installation. With DOMAIN set to a DNS name
   # that points at this machine (ports 80/443 open) Caddy gets a real
@@ -38,5 +52,6 @@ services:
       - app
 
 volumes:
+  auth_data:
   caddy_data:
   caddy_config:

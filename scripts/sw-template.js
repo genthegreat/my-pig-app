@@ -53,6 +53,8 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // Signing in and out is always a live conversation with the server.
+  if (url.pathname.startsWith("/api/")) return;
 
   // Next's prefetcher probes each link with a HEAD before fetching its
   // payload. Answer from the precache so prefetching works offline too.
@@ -85,7 +87,7 @@ self.addEventListener("fetch", (event) => {
       // 2. Otherwise the network, remembering the answer for next time.
       try {
         const res = await fetch(request);
-        if (res.ok && (url.pathname.startsWith("/_next/") || request.mode === "navigate")) {
+        if (res.ok && !res.redirected && (url.pathname.startsWith("/_next/") || request.mode === "navigate")) {
           cache.put(clean.href, res.clone());
         }
         return res;

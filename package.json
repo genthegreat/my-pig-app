@@ -5,9 +5,9 @@
   "description": "Farm management for a commercial piggery. Offline-first PWA.",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "dev": "node scripts/gen-seed.mjs && next dev",
+    "dev": "node scripts/gen-seed.mjs && node scripts/dev.mjs",
     "build": "node scripts/gen-seed.mjs && next build && node scripts/build-sw.mjs",
-    "start": "node scripts/serve.mjs",
+    "start": "node server/index.mjs",
     "test": "node scripts/gen-seed.mjs && vitest run",
     "typecheck": "node scripts/gen-seed.mjs && tsc --noEmit",
     "gen:icons": "node scripts/gen-icons.mjs"
@@ -19,6 +19,7 @@
     "dexie": "4.4.6",
     "dexie-react-hooks": "4.4.0",
     "next": "16.3.5",
+    "nodemailer": "^10.5.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "5.9.3"
