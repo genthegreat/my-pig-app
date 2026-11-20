@@ -15,6 +15,20 @@ import { createMailer } from "./mail.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const out = resolve(root, "out");
+
+// Settings come from the environment. A settings file is read as well: the
+// one ENV_FILE names (anywhere on disk — keep it out of the checkout if you
+// like), else .env in the project folder if there is one. A variable already
+// set in the shell or by Docker wins over the file.
+const envFile = process.env.ENV_FILE ? resolve(process.env.ENV_FILE) : resolve(root, ".env");
+if (process.env.ENV_FILE && !existsSync(envFile)) {
+  console.error(`ENV_FILE=${process.env.ENV_FILE}: no such file`);
+  process.exit(1);
+}
+if (existsSync(envFile)) {
+  process.loadEnvFile(envFile);
+  console.log(`settings: ${envFile}`);
+}
 const env = process.env;
 const apiOnly = env.API_ONLY === "1";
 const port = Number(env.PORT ?? 3000);

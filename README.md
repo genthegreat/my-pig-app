@@ -98,6 +98,15 @@ The farm's records ship inside the app's JavaScript, so the server guards the fi
 
 Settings live in `.env` — see `.env.example`. Accounts are in `data/auth.json` (`pnpm start`) or the `auth_data` volume (Docker).
 
+The settings file does not have to sit in the project folder — `SMTP_URL` holds a mail password, and you may rather keep it outside the checkout:
+
+```
+docker compose --env-file /etc/my-pigs/pigs.env up -d --build     # Docker
+ENV_FILE=/etc/my-pigs/pigs.env pnpm start                         # without Docker
+```
+
+Without either, both look for `.env` in the project folder. Anything already set in the shell wins over the file, so you can also skip the file and `export` the settings instead.
+
 ## What to know
 
 - **The Windows export quirk.** Next 16's static export writes its segment-cache payloads into nested folders on Windows; `scripts/build-sw.mjs` flattens them so a Windows build matches a Linux one. Docker builds are unaffected.
