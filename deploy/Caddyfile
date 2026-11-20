@@ -3,5 +3,5 @@
 # fetches and renews a certificate for DOMAIN on its own.
 {$DOMAIN} {
     encode gzip
-    reverse_proxy app:80
+    reverse_proxy app:3000
 }

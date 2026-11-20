@@ -1,11 +1,14 @@
 # My Pigs — offline-first PWA for a piggery.
 #
 #   docker compose up -d --build            # http://<host>:3000
-#   DOMAIN=pigs.example.com docker compose --profile https up -d --build
+#   docker compose --profile https up -d --build   # HTTPS: set DOMAIN in .env first
 #
-# The container serves static files only. All farm data lives in the
-# phone's browser storage, so there is no database to back up here —
-# use Settings → Export backup on the phone.
+# Settings (invite code, mail, public address) come from .env — see .env.example.
+#
+# The container serves the app and keeps the accounts that may sign in to it
+# (the auth_data volume — back that up if you care about the accounts).
+# All farm data lives in the phone's browser storage, so there is no farm
+# database to back up here — use Settings → Export backup on the phone.
 
 services:
   app:
@@ -14,7 +17,19 @@ services:
     container_name: my-pigs
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:80"
+      - "${PORT:-3000}:3000"
+    # Every setting comes from .env in this folder (see .env.example).
+    env_file:
+      - path: .env
+        required: false
+    # Fixed inside the container, whatever .env says: PORT there is the
+    # port published on the host, not the one the server listens on.
+    environment:
+      PORT: "3000"
+      HOST: 0.0.0.0
+      AUTH_DATA_FILE: /data/auth.json
+    volumes:
+      - auth_data:/data
 
   # Automatic HTTPS for phone installation. With DOMAIN set to a DNS name
   # that points at this machine (ports 80/443 open) Caddy gets a real
@@ -38,5 +53,6 @@ services:
       - app
 
 volumes:
+  auth_data:
   caddy_data:
   caddy_config:

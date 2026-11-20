@@ -7,6 +7,9 @@ next-env.d.ts
 .env*.local
 .DS_Store
 
+# Accounts and sessions written by the server (server/auth.mjs)
+data/auth.json
+
 # The real farm: records, importer, figures, tests, and the docs that quote
 # them. Never published — copied to the deploy server by hand. See the README.
 private/
