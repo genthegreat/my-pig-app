@@ -82,7 +82,7 @@ Installing to a phone's home screen needs a secure origin. `localhost` counts; a
 DOMAIN=pigs.example.com docker compose --profile https up -d --build
 ```
 
-Copy `.env.example` to `.env` to keep `PORT` and `DOMAIN` out of the command line. A new build is picked up by installed phones on their next open ("Update ready" toast).
+Copy `.env.example` to `.env` and set `PORT` and `DOMAIN` there rather than on the command line. A new build is picked up by installed phones on their next open ("Update ready" toast).
 
 **On a server that already runs nginx**, publish the container on loopback only (`PORT=127.0.0.1:8090`) and proxy a site to it from the host's nginx, with its own certificate; set `TRUST_PROXY=1` and `APP_URL`. No `auth_basic` is needed any more — the app has its own sign-in. A small server does not need to build the image — build it on your own machine and copy it across with `docker save my-pigs-app:latest | ssh server docker load`.
 
@@ -96,16 +96,9 @@ The farm's records ship inside the app's JavaScript, so the server guards the fi
 - **No signal.** Once signed in, the phone keeps working offline as before; the session is re-checked whenever there is a connection. Signing out needs a connection, and removes the app's cached files from the device.
 - **What sign-out does not do.** Records already on a device stay in that browser's storage — they exist nowhere else, so signing out does not delete them. Someone holding an unlocked phone can still get at them with browser tools; "Reset" under Settings wipes them.
 
-Settings live in `.env` — see `.env.example`. Accounts are in `data/auth.json` (`pnpm start`) or the `auth_data` volume (Docker).
+Settings live in one file, `.env` in the project folder, next to `docker-compose.yml`. Copy `.env.example` to start it; each setting is explained there. `docker compose up` loads it into the container on its own, and `pnpm start` reads it too, so there are no flags to pass. Wrap a value in single quotes if it contains a `$` (mail passwords often do): unquoted, Docker drops it. The file is git-ignored and kept out of the image; keep it off any public place, since it holds the mail password. After editing it, run `docker compose up -d` to apply.
 
-The settings file does not have to sit in the project folder — `SMTP_URL` holds a mail password, and you may rather keep it outside the checkout:
-
-```
-docker compose --env-file /etc/my-pigs/pigs.env up -d --build     # Docker
-ENV_FILE=/etc/my-pigs/pigs.env pnpm start                         # without Docker
-```
-
-Without either, both look for `.env` in the project folder. Anything already set in the shell wins over the file, so you can also skip the file and `export` the settings instead.
+Accounts are in `data/auth.json` (`pnpm start`) or the `auth_data` volume (Docker).
 
 ## What to know
 
