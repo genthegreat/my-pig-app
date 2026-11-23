@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { AuthError, signOut } from "@/auth/client";
+import { useAccount, useToast } from "@/components/AppShell";
 import { useOpenFlagCount } from "@/db/hooks";
 import { Page } from "@/components/ui";
 
@@ -22,8 +25,37 @@ const ITEMS = [
 
 export default function MorePage() {
   const flags = useOpenFlagCount();
+  const account = useAccount();
+  const { toast } = useToast();
+  const [leaving, setLeaving] = useState(false);
+
+  async function leave() {
+    setLeaving(true);
+    try {
+      await signOut();
+      window.location.assign("/signin/");
+    } catch (e) {
+      toast(e instanceof AuthError && e.status === 0 ? "No connection — you need signal to sign out" : "Could not sign out. Try again.", "error");
+      setLeaving(false);
+    }
+  }
+
   return (
     <Page title="More">
+      {account && (
+        <div className="card account">
+          <span className="avatar" aria-hidden>
+            {account.name.trim().charAt(0).toUpperCase() || "?"}
+          </span>
+          <div className="grow">
+            <div className="bold ellipsis">{account.name}</div>
+            <div className="small muted ellipsis">{account.email}</div>
+          </div>
+          <button type="button" className="btn sm" onClick={leave} disabled={leaving}>
+            {leaving ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
+      )}
       <div className="card tight">
         <div className="list">
           {ITEMS.map((i) => (

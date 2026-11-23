@@ -65,5 +65,20 @@ const version = hash.digest("hex").slice(0, 12);
 const sw = template.replace("__VERSION__", version).replace("/* __PRECACHE__ */ []", JSON.stringify(urls.sort(), null, 1));
 writeFileSync(resolve(out, "sw.js"), sw);
 
+// The sign-in screens are served to anyone, so nothing they load may carry
+// the farm. Everything that touches the records goes through the Dexie
+// store, whose table names give it away.
+const publicAssets = new Set();
+for (const page of ["signin", "signup", "forgot-password", "reset-password"]) {
+  for (const m of readFileSync(join(out, page, "index.html"), "utf8").matchAll(/\/_next\/static\/[^"'\\\s<>)]+/g)) publicAssets.add(m[0].split("?")[0]);
+}
+for (const asset of publicAssets) {
+  if (!asset.endsWith(".js")) continue;
+  if (/sync_queue|weigh_event/.test(readFileSync(join(out, asset), "utf8"))) {
+    console.error(`build-sw: ${asset} is loaded by a sign-in screen but contains the farm store.\nSomething under src/app/(auth) or src/auth imports from @/db or @/seed — it must not.`);
+    process.exit(1);
+  }
+}
+
 const totalKb = Math.round(files.reduce((s, p) => s + statSync(join(out, p)).size, 0) / 1024);
 console.log(`sw.js: version ${version}, ${urls.length} files precached (${totalKb} kB)`);

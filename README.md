@@ -21,7 +21,7 @@ It replaces handwritten phone notes that never agreed with each other. The rules
 - **Equipment register** — every item traced to the cost line it was bought on, repairs attached to the item.
 - **Flags** — every record that does not reconcile, visible until resolved.
 
-It is a Next.js static export served as a PWA: every screen is a precached file, the local IndexedDB store (Dexie) is the source of truth, and nothing waits on the network. Every record carries `id`, `updated_at` and `device_id`, and every write is queued in `sync_queue`, so server sync is an addition rather than a rewrite.
+It is a Next.js static export served as a PWA: every screen is a precached file, the local IndexedDB store (Dexie) is the source of truth, and nothing waits on the network. The one thing that talks to a server is signing in. Every record carries `id`, `updated_at` and `device_id`, and every write is queued in `sync_queue`, so server sync is an addition rather than a rewrite.
 
 ```
 src/domain/     the arithmetic: offer/hold-or-sell, sales, rations, growth, herd,
@@ -29,9 +29,12 @@ src/domain/     the arithmetic: offer/hold-or-sell, sales, rations, growth, herd
 src/db/         Dexie schema, write path with sync queue, settings (every constant with
                 its source), seed loader, calendar generator
 src/seed/       the sample farm, and the generated pointer to whichever farm is loaded
-src/app/        the screens
-scripts/        gen-seed (picks the farm), build-sw (precache manifest), gen-icons, serve
-deploy/         nginx config, Caddyfile
+src/app/(app)/  the farm's screens — only handed to someone signed in
+src/app/(auth)/ sign in, sign up, forgot and reset password — public
+src/auth/       the browser's side of signing in
+server/         the Node server: serves the export, accounts, sessions, reset mail
+scripts/        gen-seed (picks the farm), build-sw (precache manifest), gen-icons, dev
+deploy/         Caddyfile
 data/schema.sql the complete schema as SQL DDL
 ```
 
@@ -55,13 +58,13 @@ Before every `dev`, `build`, `test` and `typecheck`, `scripts/gen-seed.mjs` chec
 
 ```
 pnpm install           # Node 20.9+, pnpm 10 (`corepack enable` provides it)
-pnpm dev               # http://localhost:3000 — no service worker in dev
+pnpm dev               # http://localhost:3000 — no service worker in dev; auth API alongside on :3001
 pnpm test              # the money and identity maths, sample farm checks, and private/tests when present
 pnpm build             # static export in out/, with sw.js
-pnpm start             # serves out/ on :3000, offline behaviour included
+pnpm start             # serves out/ on :3000 behind sign-in, offline behaviour included
 ```
 
-The tests are deliberately few: sales and dressing percentage, the offer calculator, rations, pay schedules, and the sample farm's integrity. They never ship in the app, and the Docker build installs without the test tools (`pnpm install --prod`).
+The tests are deliberately few: sales and dressing percentage, the offer calculator, rations, pay schedules, sign-in and password reset, and the sample farm's integrity. They never ship in the app, and the Docker build installs without the test tools (`pnpm install --prod`).
 
 ## Deploy it with Docker Compose
 
@@ -71,7 +74,7 @@ docker compose up -d --build           # http://<host>:3000  (PORT=… to change
 
 To deploy your own farm rather than the sample, copy your `private/` folder onto the server next to the checkout before building — the image build picks it up the same way. Keep it off any public place.
 
-The image is nginx serving the export; there is no database or server-side state, so nothing to back up on the server. Farm data lives in the phone — use Settings → Export backup.
+The image is a small Node server (`server/`) that hands out the export and decides who may have it. Farm data lives in the phone — use Settings → Export backup. The only state on the server is the accounts file, kept in the `auth_data` volume.
 
 Installing to a phone's home screen needs a secure origin. `localhost` counts; a LAN address does not. For a real install, point a DNS name at the machine and run the HTTPS profile, which puts Caddy in front with automatic certificates:
 
@@ -79,9 +82,23 @@ Installing to a phone's home screen needs a secure origin. `localhost` counts; a
 DOMAIN=pigs.example.com docker compose --profile https up -d --build
 ```
 
-Copy `.env.example` to `.env` to keep `PORT` and `DOMAIN` out of the command line. A new build is picked up by installed phones on their next open ("Update ready" toast).
+Copy `.env.example` to `.env` and set `PORT` and `DOMAIN` there rather than on the command line. A new build is picked up by installed phones on their next open ("Update ready" toast).
 
-**On a server that already runs nginx**, publish the container on loopback only (`PORT=127.0.0.1:8090`) and proxy a site to it from the host's nginx, with its own certificate. With your own farm's records baked in, put a password in front (`auth_basic`): the records ship inside the JavaScript, so anyone who can load the page can read them. A small server does not need to build the image — build it on your own machine and copy it across with `docker save my-pigs-app:latest | ssh server docker load`.
+**On a server that already runs nginx**, publish the container on loopback only (`PORT=127.0.0.1:8090`) and proxy a site to it from the host's nginx, with its own certificate; set `TRUST_PROXY=1` and `APP_URL`. No `auth_basic` is needed any more — the app has its own sign-in. A small server does not need to build the image — build it on your own machine and copy it across with `docker save my-pigs-app:latest | ssh server docker load`.
+
+## Signing in
+
+The farm's records ship inside the app's JavaScript, so the server guards the files themselves: a visitor without a session can load the sign-in screens and nothing else. The build fails if a sign-in screen ever pulls in the farm store.
+
+- **Sign up.** The first account created owns the farm, and sign-up then closes. To let more people in — or to stop a stranger getting there first on a public address — set `SIGNUP_CODE`; everyone creating an account must then type it.
+- **Sign in.** Email and password. Passwords are stored as scrypt hashes; the session is an HttpOnly cookie lasting 60 days from last use, and only its hash is kept. Eight wrong tries lock an email for 15 minutes.
+- **Forgot password.** Sends a link that works once, for an hour, and signs the account out everywhere when used. Set `SMTP_URL` (and `MAIL_FROM`) for the email to go out; without it the link is printed to the server log (`docker compose logs app`) for whoever runs the server to pass on. Set `APP_URL` so the link carries the right address.
+- **No signal.** Once signed in, the phone keeps working offline as before; the session is re-checked whenever there is a connection. Signing out needs a connection, and removes the app's cached files from the device.
+- **What sign-out does not do.** Records already on a device stay in that browser's storage — they exist nowhere else, so signing out does not delete them. Someone holding an unlocked phone can still get at them with browser tools; "Reset" under Settings wipes them.
+
+Settings live in one file, `.env` in the project folder, next to `docker-compose.yml`. Copy `.env.example` to start it; each setting is explained there. `docker compose up` loads it into the container on its own, and `pnpm start` reads it too, so there are no flags to pass. Wrap a value in single quotes if it contains a `$` (mail passwords often do): unquoted, Docker drops it. The file is git-ignored and kept out of the image; keep it off any public place, since it holds the mail password. After editing it, run `docker compose up -d` to apply.
+
+Accounts are in `data/auth.json` (`pnpm start`) or the `auth_data` volume (Docker).
 
 ## What to know
 
